@@ -2,7 +2,7 @@ import stripe from '../utils/stripe.js';
 
 const createPaymentIntent = async (req, res) => {
   try {
-    const { amount, currency = 'inr', customer_email } = req.body;
+    const { amount, currency = 'usd', customer_email } = req.body;
 
     if (!amount || isNaN(amount)) {
       return res.status(400).json({
@@ -12,8 +12,19 @@ const createPaymentIntent = async (req, res) => {
       });
     }
 
+    const amountInMinorUnits = Math.round(Number(amount) * 100);
+
+    // Stripe requires at least 50 cents (or equivalent) for card charges
+    if (amountInMinorUnits < 50) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Amount must be at least $0.50 (or equivalent).',
+        statusCode: 400,
+      });
+    }
+
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(Number(amount) * 100),
+      amount: amountInMinorUnits,
       currency,
       automatic_payment_methods: {
         enabled: true,

@@ -41,10 +41,13 @@ const OrderScreen = () => {
       if (!stripe || !elements) return;
       setSubmitting(true);
       try {
+        if (Number(order.totalPrice) < 0.5) {
+          throw new Error('Minimum charge is $0.50');
+        }
         const res = await fetch('/api/payments/create-payment-intent', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ amount: Number(order.totalPrice), currency: 'inr', customer_email: order.user.email }),
+          body: JSON.stringify({ amount: Number(order.totalPrice), currency: 'usd', customer_email: order.user.email }),
         });
         const data = await res.json();
         if (!data.clientSecret) throw new Error(data?.message || 'Failed to create payment intent');
