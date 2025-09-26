@@ -14,13 +14,13 @@
 - Admin Order details page
 - Mark orders as delivered option
 - Checkout process (shipping, payment method, etc)
-- PayPal / credit card integration
+- Stripe card payments integration
 - Database seeder (products & users)
 
 ## Usage
 
 - Create a MongoDB database and obtain your `MongoDB URI`
-- Create a PayPal account and obtain your `Client ID` - [PayPal Developer](https://developer.paypal.com/)
+- Create a Stripe account and obtain your API keys - `Publishable key` and `Secret key` (test keys)
 
 ### Env Variables
 
@@ -31,9 +31,8 @@ NODE_ENV = development
 PORT = 5000
 MONGO_URI = your mongodb uri
 JWT_SECRET = your jwt secret
-PAYPAL_CLIENT_ID = your paypal client id
-PAYPAL_APP_SECRET= your paypal secret id
-PAYPAL_API_URL=https://api-m.sandbox.paypal.com
+STRIPE_SECRET_KEY=sk_test_xxx
+VITE_STRIPE_PUBLISHABLE_KEY=pk_test_xxx
 ```
 
 Change the JWT_SECRET to what you want

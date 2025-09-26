@@ -1,7 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Row, Col, ListGroup, Image, Card, Button } from 'react-bootstrap';
-import { PayPalButtons, usePayPalScriptReducer } from '@paypal/react-paypal-js';
+import { loadStripe } from '@stripe/stripe-js';
+import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { useSelector } from 'react-redux';
 import { toast } from 'react-toastify';
 import Message from '../components/Message';
@@ -9,7 +10,6 @@ import Loader from '../components/Loader';
 import {
   useDeliverOrderMutation,
   useGetOrderDetailsQuery,
-  useGetPaypalClientIdQuery,
   usePayOrderMutation,
 } from '../slices/ordersApiSlice';
 
@@ -30,64 +30,59 @@ const OrderScreen = () => {
 
   const { userInfo } = useSelector((state) => state.auth);
 
-  const [{ isPending }, paypalDispatch] = usePayPalScriptReducer();
+  const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
 
-  const {
-    data: paypal,
-    isLoading: loadingPayPal,
-    error: errorPayPal,
-  } = useGetPaypalClientIdQuery();
+  const StripeCheckoutInner = () => {
+    const stripe = useStripe();
+    const elements = useElements();
+    const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    if (!errorPayPal && !loadingPayPal && paypal.clientId) {
-      const loadPaypalScript = async () => {
-        paypalDispatch({
-          type: 'resetOptions',
-          value: {
-            'client-id': paypal.clientId,
-            currency: 'USD',
+    const handleStripePay = async () => {
+      if (!stripe || !elements) return;
+      setSubmitting(true);
+      try {
+        const res = await fetch('/api/payments/create-payment-intent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ amount: Number(order.totalPrice), currency: 'inr', customer_email: order.user.email }),
+        });
+        const data = await res.json();
+        if (!data.clientSecret) throw new Error(data?.message || 'Failed to create payment intent');
+
+        const result = await stripe.confirmCardPayment(data.clientSecret, {
+          payment_method: {
+            card: elements.getElement(CardElement),
+            billing_details: { email: order.user.email },
           },
         });
-        paypalDispatch({ type: 'setLoadingStatus', value: 'pending' });
-      };
-      if (order && !order.isPaid) {
-        if (!window.paypal) {
-          loadPaypalScript();
+
+        if (result.error) throw new Error(result.error.message);
+
+        if (result.paymentIntent.status === 'succeeded') {
+          await payOrder({ orderId, details: { id: result.paymentIntent.id, status: 'succeeded', update_time: new Date().toISOString(), payer: { email_address: order.user.email } } }).unwrap();
+          refetch();
+          toast.success('Order is paid');
+        } else {
+          toast.warn(`Payment status: ${result.paymentIntent.status}`);
         }
-      }
-    }
-  }, [errorPayPal, loadingPayPal, order, paypal, paypalDispatch]);
-
-  function onApprove(data, actions) {
-    return actions.order.capture().then(async function (details) {
-      try {
-        await payOrder({ orderId, details }).unwrap();
-        refetch();
-        toast.success('Order is paid');
       } catch (err) {
-        toast.error(err?.data?.message || err.error);
+        toast.error(err?.data?.message || err.message || 'Payment failed');
+      } finally {
+        setSubmitting(false);
       }
-    });
-  }
+    };
 
-  
-  function onError(err) {
-    toast.error(err.message);
-  }
-
-  function createOrder(data, actions) {
-    return actions.order
-      .create({
-        purchase_units: [
-          {
-            amount: { value: order.totalPrice },
-          },
-        ],
-      })
-      .then((orderID) => {
-        return orderID;
-      });
-  }
+    return (
+      <div>
+        <div style={{ border: '1px solid #ccc', padding: '10px', borderRadius: '4px' }}>
+          <CardElement options={{ hidePostalCode: true }} />
+        </div>
+        <Button disabled={!stripe || submitting} onClick={handleStripePay} className='btn btn-block' style={{ marginTop: '10px' }}>
+          {submitting ? 'Processing...' : 'Pay with Card'}
+        </Button>
+      </div>
+    );
+  };
 
   const deliverHandler = async () => {
     try {
@@ -211,28 +206,9 @@ const OrderScreen = () => {
               {!order.isPaid && (
                 <ListGroup.Item>
                   {loadingPay && <Loader />}
-
-                  {isPending ? (
-                    <Loader />
-                  ) : (
-                    <div>
-                      {/* THIS BUTTON IS FOR TESTING! REMOVE BEFORE PRODUCTION! */}
-                      {/* <Button
-                        style={{ marginBottom: '10px' }}
-                        onClick={onApproveTest}
-                      >
-                        Test Pay Order
-                      </Button> */}
-
-                      <div>
-                        <PayPalButtons
-                          createOrder={createOrder}
-                          onApprove={onApprove}
-                          onError={onError}
-                        ></PayPalButtons>
-                      </div>
-                    </div>
-                  )}
+                  <Elements stripe={stripePromise}>
+                    <StripeCheckoutInner />
+                  </Elements>
                 </ListGroup.Item>
               )}
 
